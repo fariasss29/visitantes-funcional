@@ -1,0 +1,147 @@
+import React from 'react';
+import { Box, Paper, IconButton, Typography } from '@mui/material';
+import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
+import { FaRegCircleCheck, FaRegCircleXmark } from 'react-icons/fa6';
+import toast from 'react-hot-toast';
+import axios from '@/services/axios';
+import BackdropLoading from '@/components/BackdropLoading';
+import Error from '@/components/Error';
+
+export default function Aprovadores() {
+  const queryClient = useQueryClient();
+
+  const { isLoading, error, data } = useQuery(
+    'consulta para aprovadores',
+    () => axios.get('/visitantes/aprovacao').then(r => r.data)
+  );
+
+  const updateapv = useMutation(
+    apv => axios.put(`/visitantes/aprovacao/${apv.uuid}`, apv),
+    {
+      onSuccess: () => {
+        toast.success('Atualizado com sucesso');
+        queryClient.invalidateQueries('consulta para aprovadores');
+      },
+      onError: err => {
+        toast.error(`Erro: ${err.message}`);
+      }
+    }
+  );
+
+  const handleStatusChange = (row, status) => {
+    updateapv.mutate({ ...row, status });
+  };
+
+  if (isLoading) return <BackdropLoading />;
+  if (error) return <Error error={error.response?.data || error} />;
+
+  // começa de hoje 00:00
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  // primeiro só filtra pelas datas >= hoje
+  const dataComDataFutura = (data || []).filter(row => {
+    const dt = new Date(row.data_visita);
+    return !isNaN(dt) && dt >= todayStart;
+  });
+
+  const pendentes = dataComDataFutura.filter(r => r.status === 'Pendente');
+  const outros = dataComDataFutura.filter(r => r.status !== 'Pendente');
+  const rowsOrdenadas = [...pendentes, ...outros];
+
+  // estilo de cada status
+  const commonStyles = {
+    px: 2, borderRadius: 10, fontWeight: 'bold',
+    color: 'white', display: 'flex', justifyContent: 'center',
+    alignItems: 'center', height: 45, mt: 0.4,
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+  };
+  function StyleStatus(status) {
+    switch (status) {
+      case 'AUTORIZADA': return { ...commonStyles, bgcolor: '#28a745' };
+      case 'Não Autorizada': return { ...commonStyles, bgcolor: '#dc3545' };
+      case 'Pendente': return { ...commonStyles, bgcolor: '#ffc107' };
+      default: return { ...commonStyles, bgcolor: '#ffc107' }; // gabiarra pendente n ta funcionado ai pendente cai como outro 
+    }
+  }
+
+  const columns = [
+    {
+      field: 'status',
+      headerName: 'Status',
+      width: 160,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ row }) => (
+        <Box sx={StyleStatus(row.status)}>
+          {row.status || 'Pendente'}
+        </Box>
+      )
+    },
+    {
+      field: 'aprovar',
+      headerName: 'Aprovar/Rejeitar',
+      width: 110,
+      sortable: false,
+      filterable: false,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ row }) => (
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <IconButton
+            color="primary"
+            size="small"
+            onClick={() => handleStatusChange(row, 'AUTORIZADA')}
+          >
+            <FaRegCircleCheck size={26} />
+          </IconButton>
+          <IconButton
+            color="error"
+            size="small"
+            onClick={() => handleStatusChange(row, 'Não Autorizada')}
+          >
+            <FaRegCircleXmark size={26} />
+          </IconButton>
+        </Box>
+      )
+    },
+    { field: 'nome_completo', headerName: 'Visitante', width: 200, align: 'center', headerAlign: 'center' },
+    {
+      field: 'data_visita',
+      headerName: 'Data Visita',
+      width: 180,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ value }) => {
+        const dt = new Date(value);
+        return isNaN(dt)
+          ? ''
+          : dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR');
+      }
+    },
+    { field: 'solicitante', headerName: 'Solicitante', width: 180, align: 'center', headerAlign: 'center' },
+    { field: 'motivo', headerName: 'Motivo', width: 140, align: 'center', headerAlign: 'center' },
+    { field: 'observacoes', headerName: 'Observação', width: 200, align: 'center', headerAlign: 'center' }
+  ];
+
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Typography variant='h4' mb={2}>
+        Aprovações
+      </Typography>
+      <Paper sx={{ height: '80vh', borderRadius: 2, overflow: 'hidden' }}>
+        <DataGrid
+          rows={rowsOrdenadas}
+          columns={columns}
+          getRowId={row => row.uuid}
+          slots={{ toolbar: GridToolbar }}
+          slotProps={{ toolbar: { showQuickFilter: true, quickFilterProps: { debounceMs: 300 } } }}
+          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+          pageSizeOptions={[5, 10, 20]}
+          disableRowSelectionOnClick
+        />
+      </Paper>
+    </Box>
+  );
+}
