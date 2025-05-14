@@ -1,0 +1,505 @@
+import React, { useState } from 'react';
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  FormControl,
+  FormControlLabel,
+  FormLabel,
+  MenuItem,
+  Paper,
+  Radio,
+  RadioGroup,
+  Select,
+  TextField,
+  Typography
+} from '@mui/material';
+import { useForm, Controller } from 'react-hook-form';
+import axios from '@/services/axios';
+import toast from 'react-hot-toast';
+import ModalCadastroVisita from '@/components/visitantes/ModalCadastroVisita';
+import { useQuery } from 'react-query';
+import BackdropLoading from '@/components/BackdropLoading';
+import { DateTimePicker } from '@mui/x-date-pickers-pro';
+
+const hojeISOString = new Date().toISOString().slice(0, 16);
+const motivos = ['Reunião', 'Visita Técnica', 'Entrevista'];
+const opcoes = ['Notebook', 'EPI', 'Fotos', 'Fabrica', 'Estacionamento'];
+
+const formatDate = (date) => {
+  const newDate = new Date(date);
+  return newDate.toISOString().slice(0, 19).replace('T', ' '); // 'YYYY-MM-DD HH:mm:ss'
+};
+
+export default function CadastroVisita() {
+  const defaultValues = {
+    nome_completo: '',
+    documento: '',
+    empresa: '',
+    solicitante: null,
+    motivo: '',
+    Notebook: 0,
+    EPI: 0,
+    Fotos: 0,
+    Fabrica: 0,
+    Estacionamento: 0,
+    oculos_disponibilidade: '',
+    fone_disponibilidade: '',
+    sapato_disponibilidade: '',
+    sapato_tamanho: '',
+    observacoes: ''
+  };
+
+  const [open, setOpenConfirmModal] = useState(false);
+  const [dadosEnvio, setDadosEnvio] = useState(null);
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    reset,
+    formState: { errors }
+  } = useForm({ defaultValues });
+
+  const { isLoading: carregaFunc, error: erroFunc, data: func } = useQuery(
+    'NomesFuncionarios',
+    () => axios.get('/visitantes/consultas_todos_funcionarios').then(r => r.data)
+  );
+  const { isLoading: carregaVis, error: erroVis, data: vis } = useQuery(
+    'VisitantesCadastro',
+    () => axios.get('/visitantes/visitantes/consulta_visita').then(r => r.data)
+  );
+
+  if (carregaFunc || carregaVis) return <BackdropLoading />;
+  if (erroFunc || erroVis) return <Alert severity='error'>{erroFunc?.message || erroVis?.message}</Alert>;
+
+  const handleCloseCadastroVisita = () => setOpenConfirmModal(false);
+
+  const confirmarVisita = () => {
+    toast.promise(
+      axios.post('/visitantes/cadastro_visita', dadosEnvio),
+      {
+        loading: 'Carregando...',
+        success: res => {
+          handleCloseCadastroVisita();
+          reset(); // limpa o formulário aqui, após confirmar no modal
+          return res.data.message;
+        },
+        error: err => err.response?.data?.message || 'Erro ao salvar'
+      }
+    );
+  };
+
+  const EPI = watch('EPI');
+
+  const onSubmit = (dados) => {
+    const dataSelecionada = new Date(dados.data_visita);
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+
+    if (dataSelecionada < hoje) {
+      toast.error('Data não pode ser anterior à hoje.');
+      return;
+    }
+
+    const dataFormatada = formatDate(dados.data_visita);
+    setDadosEnvio({ ...dados, data_visita: dataFormatada });
+    setOpenConfirmModal(true);
+  };
+
+  const ErrorAlert = ({ campo }) =>
+    campo ? (
+      <Alert variant='outlined' sx={{ mt: 1 }} severity='error'>
+        {campo.message || 'Campo obrigatório'}
+      </Alert>
+    ) : null;
+
+  return (
+    <Box sx={{ width: '100%', px: 3, mt: 3 }}>
+      <Typography variant='h4' sx={{ mb: 2 }}>Cadastro de Visita</Typography>
+      <Paper sx={{ p: 4, borderRadius: 5 }}>
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+            {/* Nome Completo */}
+            <Box>
+              <TextField
+                label='Nome Completo'
+                fullWidth
+                {...register('nome_completo', { required: 'Campo obrigatório' })}
+              />
+              <ErrorAlert campo={errors.nome_completo} />
+            </Box>
+
+            {/* Documento de Identidade */}
+            <Box>
+              <TextField
+                label='Documento de Identidade'
+                fullWidth
+                {...register('documento', { required: 'Documento é obrigatório' })}
+              />
+              <ErrorAlert campo={errors.documento} />
+            </Box>
+
+            {/* Empresa */}
+            <Box>
+              <TextField
+                label='Empresa'
+                fullWidth
+                {...register('empresa')}
+                onChange={e => (e.target.value = e.target.value.toUpperCase())}
+              />
+              <ErrorAlert campo={errors.empresa} />
+            </Box>
+
+            {/* Solicitante */}
+            <Box>
+              <Controller
+                name='solicitante'
+                control={control}
+                defaultValue={defaultValues.solicitante}
+                rules={{ required: 'Solicitante é obrigatório' }}
+                render={({ field }) => (
+                  <Autocomplete
+                    {...field}
+                    options={func || []}
+                    getOptionLabel={opt => opt.nome || ''}
+                    isOptionEqualToValue={(opt, val) => opt.uuid === val?.uuid}
+                    filterOptions={(opts, state) =>
+                      state.inputValue.length > 2
+                        ? opts.filter(o => o.nome.toLowerCase().includes(state.inputValue.toLowerCase()))
+                        : []
+                    }
+                    renderInput={params => (
+                      <TextField
+                        {...params}
+                        placeholder='Selecione o solicitante'
+                        error={!!errors.solicitante}
+                        helperText={errors.solicitante?.message}
+                      />
+                    )}
+                    onChange={(_, v) => field.onChange(v)}
+                  />
+                )}
+              />
+              <ErrorAlert campo={errors.solicitante} />
+            </Box>
+
+            {/* Motivo da Visita */}
+            <Box>
+              <Controller
+                render={({ field }) => (
+                  <Select
+                    {...field}
+                    displayEmpty
+                    sx={{ width: '100%' }}
+                    renderValue={(selected) => {
+                      if (!selected) {
+                        return <Typography>Selecione o Motivo</Typography>
+                      } return selected
+                    }}
+                  >
+                    <MenuItem value='' disabled>Selecione o Motivo</MenuItem>
+                    {motivos.map((e, i) => (
+                      <MenuItem key={i} value={e}>
+                        {e}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                )}
+                rules={{ required: 'Campo obrigatório' }}
+                name='motivo'
+                control={control}
+              />
+              <ErrorAlert campo={errors.motivo} />
+            </Box>
+
+            <Box sx={{ flex: 1, width: '100%' }}>
+              <Controller
+                render={({ field }) => (
+                  <DateTimePicker
+                    sx={{ width: '100%', }}
+                    {...field}
+                    label='Data e Hora da Visita'
+                    onChange={(date) => field.onChange(date)}
+                    value={field.value}
+                    minDate={new Date()}
+                  />
+                )}
+                name='data_visita'
+                rules={{ required: 'Data é obrigatória' }}
+                control={control}
+              />
+              <ErrorAlert campo={errors.data_visita} />
+            </Box>
+
+            {/* Opções */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 1, width: '100%' }}>
+              {opcoes.map((item) => (
+                <FormControl
+                  key={item}
+                  component="fieldset"
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    border: '1px solid #CCC',
+                    borderRadius: 2,
+                    p: 1,
+                    width: 204,
+                  }}
+                >
+                  <FormLabel component="legend" sx={{ fontWeight: 'bold', px: 1 }}>
+                    {item}
+                  </FormLabel>
+                  <Controller
+                    name={item}
+                    control={control}
+                    defaultValue={0}
+                    render={({ field: { onChange, value } }) => (
+                      <RadioGroup row value={value} onChange={(_, v) => onChange(Number(v))}>
+                        <FormControlLabel
+                          value={1}
+                          control={<Radio />}
+                          label="Sim"
+                          sx={{
+
+                            m: 1,
+                            px: 2,
+                            py: 1,
+                            border: '1px solid #ccc',
+                            borderRadius: '10px',
+                            flex: 1,
+                            height: '50px',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            textAlign: 'center',
+                            '& .MuiRadio-root': { p: 0, mr: 1, color: '#2e7d32' },
+                            '& .MuiFormControlLabel-label': { fontSize: '1.2rem', fontWeight: '500' },
+                          }}
+                        />
+                        <FormControlLabel
+                          value={0}
+                          control={<Radio />}
+                          label="Não"
+                          sx={{
+                            m: 1,
+                            px: 2,
+                            py: 1,
+                            border: '1px solid #ccc',
+                            borderRadius: '10px',
+                            flex: 1,
+                            height: '50px',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            textAlign: 'center',
+                            '& .MuiRadio-root': { p: 0, mr: 1, color: '#d32f2f' },
+                            '& .MuiFormControlLabel-label': { fontSize: '1.2rem', fontWeight: '500' },
+                          }}
+                        />
+                      </RadioGroup>
+                    )}
+                  />
+                </FormControl>
+              ))}
+
+              {/* EPI - Campos Adicionais */}
+              {EPI === 1 && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 1.5,
+                    mt: 1.5,
+                    border: '1px solid #CCC',
+                    borderRadius: 2,
+                    p: 2,
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                  }}
+                >
+                  <Box sx={{ width: 230, minWidth: 150 }}>
+                    <FormControl
+                      component="fieldset"
+                      sx={{
+                        m: 0,
+                        p: 1.5,
+                        border: '2px solid #ccc',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        '& .MuiRadioGroup-root': {
+                          justifyContent: 'center',
+                        },
+                        '& .MuiFormControlLabel-root': {
+                          justifyContent: 'center',
+                          width: 'auto', 
+                        },
+                        '& .MuiFormControlLabel-label': {
+                          textAlign: 'center',
+                          width: 'auto', 
+                          whiteSpace: 'normal', 
+                          fontSize: '1.25rem',
+                        },
+                        '& .MuiRadio-root': { p: 0, mr: 1, color: '#d32f2f' },
+                      }}
+                    >
+                      <FormLabel component="legend">Óculos disponibilizado por</FormLabel>
+                      <Controller
+                        name="oculos_disponibilidade"
+                        control={control}
+                        defaultValue=""
+                        rules={{ required: 'Selecione uma opção' }}
+                        render={({ field }) => (
+                          <RadioGroup row {...field}>
+                            <FormControlLabel value="proprio" control={<Radio />} label="Possui próprio" />
+                            <FormControlLabel value="empresa" control={<Radio />} label="Hitachi Astemo" />
+                          </RadioGroup>
+                        )}
+                      />
+                      <ErrorAlert campo={errors.oculos_disponibilidade} />
+                    </FormControl>
+                  </Box>
+
+                  <Box sx={{ width: 230, minWidth: 150 }}>
+                    <FormControl
+                      component="fieldset"
+                      sx={{
+                        m: 0,
+                        p: 1.5,
+                        border: '2px solid #ccc',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        '& .MuiRadioGroup-root': {
+                          justifyContent: 'center',
+                        },
+                        '& .MuiFormControlLabel-root': {
+                          justifyContent: 'center',
+                          width: 'auto', 
+                        },
+                        '& .MuiFormControlLabel-label': {
+                          textAlign: 'center',
+                          width: 'auto', 
+                          whiteSpace: 'normal', 
+                          fontSize: '1.25rem',
+                        },
+                        '& .MuiRadio-root': { p: 0, mr: 1, color: '#d32f2f' },
+                      }}
+                    >
+                      <FormLabel component="legend">Fones disponibilizado por</FormLabel>
+                      <Controller
+                        name="fone_disponibilidade"
+                        control={control}
+                        defaultValue=""
+                        rules={{ required: 'Selecione uma opção' }}
+                        render={({ field }) => (
+                          <RadioGroup row {...field}>
+                            <FormControlLabel value="proprio" control={<Radio />} label="Possui próprio" />
+                            <FormControlLabel value="empresa" control={<Radio />} label="Hitachi Astemo" />
+                          </RadioGroup>
+                        )}
+                      />
+                      <ErrorAlert campo={errors.fone_disponibilidade} />
+                    </FormControl>
+                  </Box>
+
+                  <Box sx={{ width: 230, minWidth: 150 }}>
+                    <FormControl
+                      component="fieldset"
+                      sx={{
+                        m: 0,
+                        p: 1.5,
+                        border: '2px solid #ccc',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        '& .MuiRadioGroup-root': {
+                          justifyContent: 'center',
+                        },
+                        '& .MuiFormControlLabel-root': {
+                          justifyContent: 'center',
+                          width: 'auto', 
+                        },
+                        '& .MuiFormControlLabel-label': {
+                          textAlign: 'center',
+                          width: 'auto', 
+                          whiteSpace: 'normal', 
+                          fontSize: '1.25rem',
+                        },
+                        '& .MuiRadio-root': { p: 0, mr: 1, color: '#d32f2f' },
+                      }}
+                    >
+                      <FormLabel component="legend">Sapatos disponibilizado por</FormLabel>
+                      <Controller
+                        name="sapato_disponibilidade"
+                        control={control}
+                        defaultValue=""
+                        rules={{ required: 'Selecione uma opção' }}
+                        render={({ field }) => (
+                          <RadioGroup row {...field}>
+                            <FormControlLabel value="proprio" control={<Radio />} label="Possui próprio" />
+                            <FormControlLabel value="empresa" control={<Radio />} label="Hitachi Astemo" />
+                          </RadioGroup>
+                        )}
+                      />
+                      <ErrorAlert campo={errors.sapato_disponibilidade} />
+                    </FormControl>
+                  </Box>
+
+                  {/* Campo adicional específico para sapato */}
+                  {watch('sapato_disponibilidade') === 'empresa' && (
+                    <FormControl
+                      fullWidth
+                      sx={{
+                        mt: 2.55,
+                        width: '165px',
+                        flexGrow: 1,
+                        minWidth: 150,
+                      }}
+                    >
+                      <TextField
+                        label="Tamanho do calçado"
+                        type="number"
+                        variant="outlined"
+                        {...register('sapato_tamanho', { required: 'Campo obrigatório' })}
+                      />
+                      <ErrorAlert campo={errors.sapato_tamanho} />
+                    </FormControl>
+                  )}
+                </Box>
+              )}
+            </Box>
+
+            {/* Observações */}
+            <Box>
+              <TextField
+                label='Observações'
+                fullWidth
+                {...register('observacoes')}
+              />
+              <ErrorAlert campo={errors.observacoes} />
+            </Box>
+
+            <Button type='submit' variant='contained' fullWidth sx={{ mt: 2, py: 2, fontSize: '1.1rem' }}>
+              Registrar Visita
+            </Button>
+          </Box>
+        </form>
+      </Paper>
+
+      <ModalCadastroVisita
+        open={open}
+        handleClose={handleCloseCadastroVisita}
+        confirm={confirmarVisita}
+      />
+    </Box>
+  );
+}
