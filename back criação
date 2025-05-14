@@ -1,0 +1,43 @@
+import { Router } from "express";
+import conn from '@/db/conn'
+import { check_user } from '@/services/check_user'
+import { v4 as uuidv4 } from 'uuid';
+
+export const criacao_visitantes = Router();
+
+criacao_visitantes.post('/visitantes/cadastro_visita', async (req, res) => {
+    try {
+        // const session = await check_user(req);
+
+        // if (!session || !session.session.acessos.includes(100)) {
+        //     return res.status(401).send({
+        //         message: 'Sem permissão!'
+        //     });
+        // }
+
+        const { nome_completo, documento, empresa, sapato_tamanho, fone_disponibilidade, oculos_disponibilidade, sapato_disponibilidade,  solicitante, data_visita, motivo, Notebook, EPI, Fotos, Fabrica, Estacionamento, observacoes = '' } = req.body;
+
+        console.log('Dados recebidos para cadastro de visita:', req.body);
+        if (!nome_completo || !documento || !solicitante || !data_visita || !motivo || Notebook == null || EPI == null || Fotos == null || Fabrica == null || Estacionamento == null) {
+            return res.status(400).send({ message: 'Campos obrigatório pendente!' });
+        }
+
+        const uuid = uuidv4(); 
+
+                const sql = `
+                    INSERT INTO visitantes_registro
+                        (uuid, nome_completo, documento, empresa, solicitante, motivo, data_visita, notebook, epi, foto, fabrica, estacionamento, fone_disponibilidade, oculos_disponibilidade, sapato_disponibilidade, sapato_tamanho, observacoes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `;
+        await conn.query(sql, [uuid, nome_completo, documento, empresa, solicitante.nome, motivo, data_visita, Notebook, EPI, Fotos, Fabrica, Estacionamento, fone_disponibilidade, oculos_disponibilidade, sapato_disponibilidade, sapato_tamanho, observacoes]);
+
+        return res.status(200).send({ message: 'Visita cadastrada com sucesso!' });
+
+    } catch (error) { 
+        console.error('Erro ao tentar cadastrar visita:', error);
+        res.status(500).send({ message: 'Erro ao cadastrar visita' });
+    }
+});
+
+
+export default criacao_visitantes;
