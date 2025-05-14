@@ -1,0 +1,19 @@
+import { Router } from "express";
+import conn from '@/db/conn';
+import cron from 'node-cron';
+
+export const delete_visitantes = Router();
+
+cron.schedule('0 0 * * *', async () => {
+  try {
+    const sql = `
+      DELETE FROM visitantes_registro
+      WHERE status_agendamento = 'Pendente' 
+        AND DATEDIFF(CURRENT_DATE, data_visita) >= 3;
+    `;
+    await conn.query(sql);
+  } catch (error) {
+  }
+});
+
+export default delete_visitantes;
