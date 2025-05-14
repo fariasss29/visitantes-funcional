@@ -1,0 +1,487 @@
+import React, { useState } from 'react';
+import {
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Box,
+  Paper,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Button
+} from '@mui/material';
+import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
+import axios from '@/services/axios';
+import BackdropLoading from '@/components/BackdropLoading';
+import Error from '@/components/Error';
+import { BiEditAlt } from "react-icons/bi";
+import { FaRegCircleCheck } from 'react-icons/fa6';
+import toast from 'react-hot-toast';
+
+export default function PessoasCadastradas() {
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState('abertos');
+
+  const { isLoading, error, data } = useQuery('visitas', () =>
+    axios.get('/visitantes/consultas_todas_visitas').then(r => r.data)
+  );
+
+  console.log(data)
+
+  const updateVisitas = useMutation(
+    visita =>
+      axios.put(
+        `/visitantes/visitas-cadastradas/${visita.uuid}`,
+        visita
+      ),
+    {
+      onSuccess: () => {
+        toast.success('Atualizado com sucesso');
+        queryClient.invalidateQueries('visitas');
+        handleCloseEdit();
+      }
+    }
+  );
+
+  const handleApprove = (row) => {
+    if (filter === 'abertos') {
+      // Ajustando o formato da data
+      const formattedDate = new Date(row.data_visita).toISOString().slice(0, 19).replace('T', ' ');
+
+
+      updateVisitas.mutate({
+        ...row,
+        data_visita: formattedDate,
+        status_agendamento: 'Concluído'  // Alterando o status para 'Concluído'
+      }, {
+        onSuccess: () => {
+          toast.success
+          queryClient.invalidateQueries('visitas'); // Recarrega os dados da lista de visitas
+        }
+      });
+    }
+  };
+
+  const [openEdit, setOpenEdit] = useState(false);
+  const [editRow, setEditRow] = useState(null);
+
+  const handleEditClick = row => {
+    const originalDate = new Date(row.data_visita);
+    const year = originalDate.getFullYear();
+    const month = String(originalDate.getMonth() + 1).padStart(2, '0');
+    const day = String(originalDate.getDate()).padStart(2, '0');
+    const hours = String(originalDate.getHours()).padStart(2, '0');
+    const minutes = String(originalDate.getMinutes()).padStart(2, '0');
+    const formattedDate = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+    setEditRow({
+      ...row,
+      data_visita: formattedDate,
+    });
+    setOpenEdit(true);
+  };
+
+  const handleCloseEdit = () => {
+    setOpenEdit(false);
+    setEditRow(null);
+  };
+
+  const handleSaveEdit = () => {
+    updateVisitas.mutate(editRow);
+  };
+
+  if (isLoading) return <BackdropLoading />;
+  if (error) return <Error error={error} />;
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const filteredData = (data || [])
+    .filter(row => {
+      if (filter === 'abertos') {
+        return row.status_agendamento !== 'Concluído';
+      } else if (filter === 'concluidos') {
+        return row.status_agendamento === 'Concluído';
+      }
+      return true;
+    });
+
+  // separa futuras/hoje e passadas
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const futurasOuHoje = filteredData.filter(row => {
+    const dataVisita = new Date(row.data_visita);
+    return dataVisita >= hoje;
+  }).sort((a, b) => new Date(a.data_visita) - new Date(b.data_visita)); 
+
+  const passadas = filteredData.filter(row => {
+    const dataVisita = new Date(row.data_visita);
+    return dataVisita < hoje;
+  }).sort((a, b) => new Date(b.data_visita) - new Date(a.data_visita)); 
+
+  const ordenado = [...futurasOuHoje, ...passadas];
+
+
+
+  const commonStyles = {
+    px: 2,
+    borderRadius: 10,
+    fontWeight: 'bold',
+    color: 'white',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 45,
+    mt: 0.4,
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  };
+
+  function StyleStatus(Status) {
+  if (!Status) return { ...commonStyles, bgcolor: '#6c757d' }; 
+
+  const normalizedStatus = Status.toLowerCase();
+  switch (normalizedStatus) {
+    case 'concluído':
+      return { ...commonStyles, bgcolor: '#28a745' };
+    case 'pendente':
+      return { ...commonStyles, bgcolor: '#ffc107' };
+    default:
+      return { ...commonStyles, bgcolor: '#6c757d' };
+  }
+}
+
+  const columns = [
+    {
+      field: 'status_agendamento',
+      headerName: 'Status',
+      width: 170,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ row }) => (
+        <Box sx={StyleStatus(row.status_agendamento)}>
+          {row.status_agendamento || 'Pendente'}
+        </Box>
+      ),
+    },
+
+    {
+      field: 'acoes2',
+      headerName: 'Situação',
+      width: 110,
+      sortable: false,
+      filterable: false,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ row }) => (
+        <IconButton
+          color="primary"
+          size="small"
+          onClick={() => handleApprove(row)} //click
+        >
+          <FaRegCircleCheck size={24} />
+        </IconButton>
+      )
+    },
+    {
+      field: 'acoes',
+      headerName: 'Ações',
+      width: 110,
+      sortable: false,
+      filterable: false,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ row }) => (
+        <IconButton
+          color="primary"
+          size="small"
+          onClick={() => handleEditClick(row)}
+        >
+          <BiEditAlt size={24} />
+        </IconButton>
+      )
+    },
+    { field: 'nome_completo', headerName: 'Visitante', width: 200, align: 'center', headerAlign: 'center' },
+    { field: 'documento', headerName: 'Documento de Identidade', width: 200, align: 'center', headerAlign: 'center' },
+    {
+      field: 'data_visita',
+      headerName: 'Data Visita',
+      width: 175,
+      align: 'center',
+      headerAlign: 'center',
+      editable: true,
+      renderCell: ({ value }) => {
+        if (!value) return '';
+        const dt = new Date(value);
+        if (isNaN(dt)) return '';
+        return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR');
+      }
+    },
+    { field: 'solicitante', headerName: 'Solicitante', width: 140, align: 'center', headerAlign: 'center' },
+    { field: 'motivo', headerName: 'Motivo', width: 100, align: 'center', headerAlign: 'center' },
+    { field: 'empresa', headerName: 'Empresa', width: 100, align: 'center', headerAlign: 'center' },
+    {
+      field: 'notebook',
+      headerName: 'Notebook',
+      width: 140,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ value }) => value === 1 ? 'Sim' : 'Não'
+    },
+    {
+      field: 'epi',
+      headerName: 'EPI',
+      width: 100,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ value }) => value === 1 ? 'Sim' : 'Não'
+    },
+    {
+      field: 'foto',
+      headerName: 'Foto',
+      width: 100,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ value }) => value === 1 ? 'Sim' : 'Não'
+    },
+    {
+      field: 'estacionamento',
+      headerName: 'Estacionamento',
+      width: 140,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ value }) => value === 1 ? 'Sim' : 'Não'
+    },
+    {
+      field: 'fabrica',
+      headerName: 'Fábrica',
+      width: 100,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: ({ value }) => value === 1 ? 'Sim' : 'Não'
+    },
+    { field: 'observacoes', headerName: 'Observações', width: 200, align: 'center', headerAlign: 'center' },
+    { field: 'fone_disponibilidade', headerName: 'Fone Disponibilidade', width: 180, align: 'center', headerAlign: 'center' },
+    { field: 'oculos_disponibilidade', headerName: 'Óculos Disponibilidade', width: 180, align: 'center', headerAlign: 'center' },
+    { field: 'sapato_disponibilidade', headerName: 'Sapato Disponibilidade', width: 180, align: 'center', headerAlign: 'center' },
+    { field: 'sapato_tamanho', headerName: 'Sapato Tamanho', type: 'number', width: 140, align: 'center', headerAlign: 'center' },
+  ];
+
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Box sx={{ display: 'flex', marginBottom: 1, gap: 2, height: 55 }}>
+        <Button
+          variant="contained"
+          sx={{ backgroundColor: '#2eb872', borderRadius: 3, width: 185, fontSize: 13 }}
+          onClick={() => setFilter('abertos')}
+        >
+          Visitas Abertas
+        </Button>
+        <Button
+          variant="contained"
+          sx={{ backgroundColor: '#761a1a', borderRadius: 3, width: 185, fontSize: 12.5 }}
+          onClick={() => setFilter('concluidos')}
+        >
+          Visitas Concluídas
+        </Button>
+      </Box>
+
+      <Paper elevation={3} sx={{ height: 800, borderRadius: 2, overflow: 'hidden' }}>
+        <DataGrid
+          rows={ordenado}
+          columns={columns}
+          getRowId={row => row.uuid}
+          initialState={{ pagination: { paginationModel: { pageSize: 13 } } }}
+          pageSizeOptions={[5]}
+          disableRowSelectionOnClick
+          slots={{ toolbar: GridToolbar }}
+          slotProps={{
+            toolbar: {
+              showQuickFilter: true,
+              quickFilterProps: { debounceMs: 300 }
+            }
+          }}
+          sx={{
+            '.MuiDataGrid-columnHeaders': { backgroundColor: '#FFCCCC', color: '#333' },
+            '.MuiDataGrid-row:hover': { backgroundColor: '#f5f5f5' },
+            '.MuiDataGrid-cell': { borderBottom: '1px solid #ddd' },
+            '.MuiDataGrid-footerContainer': { backgroundColor: '#f7f7f7' },
+          }}
+        />
+      </Paper>
+
+      <Dialog open={openEdit} onClose={handleCloseEdit} fullWidth maxWidth="sm">
+        <DialogTitle>Editar Visita</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Status"
+            value={editRow?.status_agendamento || ''}
+            onChange={e => setEditRow({ ...editRow, status_agendamento: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Nome Completo"
+            value={editRow?.nome_completo || ''}
+            onChange={e => setEditRow({ ...editRow, nome_completo: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Documento de Identidade"
+            value={editRow?.documento || ''}
+            onChange={e => setEditRow({ ...editRow, documento: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Data Visita"
+            value={editRow?.data_visita ? new Date(editRow?.data_visita).toLocaleString('sv-SE').slice(0, 16) : ''}
+            onChange={e => setEditRow({ ...editRow, data_visita: e.target.value })}
+            fullWidth
+            margin="normal"
+            type="datetime-local"
+            InputLabelProps={{
+              shrink: true,
+            }}
+          />
+
+          <TextField
+            label="Solicitante"
+            value={editRow?.solicitante || ''}
+            onChange={e => setEditRow({ ...editRow, solicitante: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Motivo"
+            value={editRow?.motivo || ''}
+            onChange={e => setEditRow({ ...editRow, motivo: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Empresa"
+            value={editRow?.empresa || ''}
+            onChange={e => setEditRow({ ...editRow, empresa: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="notebook-label">Notebook</InputLabel>
+            <Select
+              labelId="notebook-label"
+              label="Notebook"
+              value={editRow?.notebook ?? ''}
+              onChange={e => setEditRow({ ...editRow, notebook: e.target.value })}
+            >
+              <MenuItem value={1}>Sim</MenuItem>
+              <MenuItem value={0}>Não</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="epi-label">EPI</InputLabel>
+            <Select
+              labelId="epi-label"
+              label="EPI"
+              value={editRow?.epi ?? ''}
+              onChange={e => setEditRow({ ...editRow, epi: e.target.value })}
+            >
+              <MenuItem value={1}>Sim</MenuItem>
+              <MenuItem value={0}>Não</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="foto-label">Foto</InputLabel>
+            <Select
+              labelId="foto-label"
+              label="Foto"
+              value={editRow?.foto ?? ''}
+              onChange={e => setEditRow({ ...editRow, foto: e.target.value })}
+            >
+              <MenuItem value={1}>Sim</MenuItem>
+              <MenuItem value={0}>Não</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="estacionamento-label">Estacionamento</InputLabel>
+            <Select
+              labelId="estacionamento-label"
+              label="Estacionamento"
+              value={editRow?.estacionamento ?? ''}
+              onChange={e => setEditRow({ ...editRow, estacionamento: e.target.value })}
+            >
+              <MenuItem value={1}>Sim</MenuItem>
+              <MenuItem value={0}>Não</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="fabrica-label">Fábrica</InputLabel>
+            <Select
+              labelId="fabrica-label"
+              label="Fábrica"
+              value={editRow?.fabrica ?? ''}
+              onChange={e => setEditRow({ ...editRow, fabrica: e.target.value })}
+            >
+              <MenuItem value={1}>Sim</MenuItem>
+              <MenuItem value={0}>Não</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            label="Observações"
+            value={editRow?.observacoes || ''}
+            onChange={e => setEditRow({ ...editRow, observacoes: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Fone Disponibilidade"
+            value={editRow?.fone_disponibilidade || ''}
+            onChange={e => setEditRow({ ...editRow, fone_disponibilidade: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Óculos Disponibilidade"
+            value={editRow?.oculos_disponibilidade || ''}
+            onChange={e => setEditRow({ ...editRow, oculos_disponibilidade: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Sapato Disponibilidade"
+            value={editRow?.sapato_disponibilidade || ''}
+            onChange={e => setEditRow({ ...editRow, sapato_disponibilidade: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="Sapato Tamanho"
+            type="number"
+            value={editRow?.sapato_tamanho || ''}
+            onChange={e => setEditRow({ ...editRow, sapato_tamanho: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseEdit}>Cancelar</Button>
+          <Button onClick={handleSaveEdit} variant="contained" disabled={updateVisitas.isLoading}>
+            {updateVisitas.isLoading ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
